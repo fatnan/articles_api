@@ -60,6 +60,10 @@ php artisan serve
 
 Server akan berjalan di http://localhost:8000.
 
+## POSTMAN
+
+download link collection : https://drive.google.com/file/d/1JQnmf0tm72wJHH0Nsx16rzGn4JZ2d2dC/view
+
 ## Endpoints API
 Registrasi
 

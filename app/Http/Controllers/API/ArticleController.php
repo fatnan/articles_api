@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Article;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
+use Validator;
 
 class ArticleController extends Controller
 {
@@ -37,16 +38,6 @@ class ArticleController extends Controller
     }
 
     /**
-     * Show the form for creating a new resource.
-     *
-     * @return \Illuminate\Http\Response
-     */
-    public function create()
-    {
-        //
-    }
-
-    /**
      * Store a newly created resource in storage.
      *
      * @param  \Illuminate\Http\Request  $request
@@ -54,16 +45,56 @@ class ArticleController extends Controller
      */
     public function store(Request $request)
     {
-        $validatedData = $request->validate([
-            'author' => 'required|string',
-            'title' => 'required|string',
-            'body' => 'required|string',
-        ]);
+        try {
+            // Definisikan aturan validasi
+            $rules = [
+                'author' => [
+                    'required',
+                    'string',
+                    'max:255',
+                    function ($attribute, $value, $fail) use ($request) {
+                        $title = $request->input('title');
 
-        $article = Article::create($validatedData);
-        Cache::put('article_'.$article->id, $article, now()->addMinutes(10));
+                        // Periksa apakah ada artikel dengan author dan title yang sama
+                        if (Article::where('author', $value)->where('title', $title)->exists()) {
+                            $fail('The combination of author and title must be unique.');
+                        }
+                    },
+                ],
+                'title' => 'required|string|max:255',
+                'body' => 'required|string',
+            ];
 
-        return response()->json($article, 201);
+            // Buat instance validator
+            $validator = Validator::make($request->all(), $rules);
+
+            // Periksa apakah validasi gagal
+            if ($validator->fails()) {
+                return response()->json([
+                    'message' => 'The given data was invalid.',
+                    'errors' => $validator->errors(),
+                ], 422);
+            }
+
+            // Validasi berhasil, buat artikel baru
+            $validatedData = $validator->validated();
+            $article = Article::create($validatedData);
+
+            // Menghapus cache dengan kunci dinamis berdasarkan query string
+            Cache::forget('articles_all');
+
+            // Simpan artikel yang baru dibuat di cache dengan kunci unik
+            $cacheKey = 'article_' . $article->id;
+            Cache::put($cacheKey, $article, now()->addMinutes(10));
+
+            return response()->json($article, 201);
+        } catch (\Exception $e) {
+            // Tangani pengecualian dan kembalikan respons JSON
+            return response()->json([
+                'message' => 'An error occurred while storing the article.',
+                'error' => $e->getMessage()
+            ], 500);
+        }
     }
 
     /**
@@ -72,20 +103,22 @@ class ArticleController extends Controller
      * @param  \App\Models\Article  $article
      * @return \Illuminate\Http\Response
      */
-    public function show(Article $article)
+    public function show($id)
     {
-        //
-    }
+        // Membuat kunci cache unik untuk artikel berdasarkan ID
+        $cacheKey = 'article_' . $id;
 
-    /**
-     * Show the form for editing the specified resource.
-     *
-     * @param  \App\Models\Article  $article
-     * @return \Illuminate\Http\Response
-     */
-    public function edit(Article $article)
-    {
-        //
+        // Mencoba mengambil artikel dari cache
+        $article = Cache::get($cacheKey);
+
+        // Jika artikel tidak ditemukan di cache, ambil dari database dan simpan di cache
+        if (!$article) {
+            $article = Article::findOrFail($id);
+            Cache::put($cacheKey, $article, now()->addMinutes(10));
+        }
+
+        // Mengembalikan artikel sebagai respons JSON
+        return response()->json($article);
     }
 
     /**
@@ -95,9 +128,64 @@ class ArticleController extends Controller
      * @param  \App\Models\Article  $article
      * @return \Illuminate\Http\Response
      */
-    public function update(Request $request, Article $article)
+    public function update(Request $request, $id)
     {
-        //
+        try {
+            // Temukan artikel berdasarkan ID
+            $article = Article::find($id);
+
+            // Periksa apakah artikel ditemukan
+            if (!$article) {
+                return response()->json(['message' => 'Article not found.'], 404);
+            }
+
+            // Definisikan aturan validasi
+            $rules = [
+                'author' => 'required|string|max:255',
+                'title' => [
+                    'required',
+                    'string',
+                    'max:255',
+                    function ($attribute, $value, $fail) use ($request, $article) {
+                        // Periksa apakah ada artikel lain dengan author dan title yang sama
+                        if (Article::where('author', $request->input('author'))
+                                    ->where('title', $value)
+                                    ->where('id', '!=', $article->id)
+                                    ->exists()) {
+                            $fail('The combination of author and title must be unique.');
+                        }
+                    },
+                ],
+                'body' => 'required|string',
+            ];
+
+            // Buat instance validator
+            $validator = Validator::make($request->all(), $rules);
+
+            // Periksa apakah validasi gagal
+            if ($validator->fails()) {
+                return response()->json([
+                    'message' => 'The given data was invalid.',
+                    'errors' => $validator->errors(),
+                ], 422);
+            }
+
+            // Validasi berhasil, perbarui artikel
+            $validatedData = $validator->validated();
+            $article->update($validatedData);
+
+            // Update cache dengan data artikel yang baru diperbarui
+            $cacheKey = 'article_' . $article->id;
+            Cache::put($cacheKey, $article, now()->addMinutes(10));
+
+            return response()->json($article, 200);
+        } catch (\Exception $e) {
+            // Tangani pengecualian dan kembalikan respons JSON
+            return response()->json([
+                'message' => 'An error occurred while updating the article.',
+                'error' => $e->getMessage()
+            ], 500);
+        }
     }
 
     /**
@@ -106,8 +194,31 @@ class ArticleController extends Controller
      * @param  \App\Models\Article  $article
      * @return \Illuminate\Http\Response
      */
-    public function destroy(Article $article)
+    public function destroy($id)
     {
-        //
+        try {
+            // Temukan artikel berdasarkan ID
+            $article = Article::find($id);
+
+            // Periksa apakah artikel ditemukan
+            if (!$article) {
+                return response()->json(['message' => 'Article not found.'], 404);
+            }
+
+            // Hapus artikel dari database
+            $article->delete();
+
+            // Hapus artikel dari cache
+            $cacheKey = 'article_' . $article->id;
+            Cache::forget($cacheKey);
+
+            return response()->json(['message' => 'Article deleted successfully'], 200);
+        } catch (\Exception $e) {
+            // Tangani pengecualian dan kembalikan respons JSON
+            return response()->json([
+                'message' => 'An error occurred while deleting the article.',
+                'error' => $e->getMessage()
+            ], 500);
+        }
     }
 }
