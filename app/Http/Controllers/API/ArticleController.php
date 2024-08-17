@@ -80,8 +80,8 @@ class ArticleController extends Controller
             $validatedData = $validator->validated();
             $article = Article::create($validatedData);
 
-            // Menghapus cache dengan kunci dinamis berdasarkan query string
-            Cache::forget('articles_all');
+            // Sementara saya memakai hapus semua cache.
+            Cache::flush();
 
             // Simpan artikel yang baru dibuat di cache dengan kunci unik
             $cacheKey = 'article_' . $article->id;

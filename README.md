@@ -36,9 +36,10 @@ cp .env.example .env
 
 ### 4. Konfigurasi .env
 
-Edit file .env untuk konfigurasi database, lalu Jalankan perintah berikut untuk menghasilkan secret key JWT :
+Edit file .env untuk konfigurasi database, lalu Jalankan perintah berikut untuk menghasilkan secret key JWT dan app_key :
 
 ```bash
+php artisan key:generate
 php artisan jwt:secret
 ```
 
@@ -163,3 +164,5 @@ Untuk menjalankan testing, Anda perlu memastikan bahwa environment testing telah
 ```bash
 php artisan test
 ```
+
+Perlu diingat bahwa menjalankan command ini akan refresh database jadi hati2 ketika menjalankannya.
